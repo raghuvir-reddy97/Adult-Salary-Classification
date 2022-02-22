@@ -1,0 +1,291 @@
+---
+title: "Adult Salary Classification"
+author: "Raghuvir Reddy"
+date: "2/21/2022"
+output: pdf_document
+---
+
+#Fit classification models to predict whether person makes over 50K a year. 
+
+In this report I will use logistic regression, Linear Discriminate Analysis, and K-Nearest Neighbors to classify income. 
+
+Data: Census Income data set (https://archive.ics.uci.edu/ml/ datasets/census+income)
+
+```{r}
+#Read in dataset
+adult <- read.csv(file="/Users/raghu/RStudio Projects/Adult Salary/adult.csv", na.strings = c("?"), stringsAsFactors = TRUE)
+head(adult)
+```
+
+```{r}
+# colnames
+colnames(adult)
+```
+
+```{r}
+# checking dimensions
+dim(adult)
+```
+
+```{r}
+# checking structure
+str(adult)
+```
+```{r}
+# Checking missing values
+colSums(is.na(adult))
+```
+```{r}
+# dropping missing values
+adult <- na.omit(adult)
+```
+
+# Exploratory Data Analysis
+
+```{r}
+# proportion of income earned
+prop <- ((table(adult$income)))
+prop
+piepercent<- round(100*prop/sum(prop), 1)
+piepercent
+```
+75.2% of sample has income <=50K. 
+
+```{r}
+# Pie chart of income
+pie(prop, labels = piepercent, main = "Proportion of income earned", col = rainbow(length(prop)))
+legend(.9, .1, c("<=50K",">50K"), fill = rainbow(length(prop)))
+```
+
+```{r}
+library(ggplot2) #ggplot2 Functions
+```
+
+```{r}
+# EDA - age and income
+ggplot(adult, aes(x=income, y=age)) +  geom_boxplot(fill='green') + ggtitle("Older people tend to make more money")
+```
+```{r}
+# education and income level
+library(ggplot2)
+ggplot(data=adult, aes(x=education,fill = income)) + stat_count(width = 0.5)
+```
+```{r}
+colors <- c("red", "blue")
+plot((adult$income), adult$gender, main = "Income earned by gender",xlab = "", ylab = "")
+```
+
+# Data modeling / wrangling
+
+The dataset used in this study has fourteen independent variables and one dependent variable i.e. income. Intuitively, we can say that age, workclass, education, occupation and hours.per.week would be significant in predicting the income. Relationship, race and sex are also going to have strong predictive power.
+
+Removal of Features
+
+Opted to not use the features: ‘fnlwgt’, ‘relationships’, 'education', and ‘capitalGains/Loss’. These
+features either were not useful for our analysis or had too many outliers. 'education_num' preferred over 'education'.
+
+```{r}
+data.frame(colnames(adult)) #Returns column index numbers in table format
+```
+Drop cols: 3, 4, 11, 12, 
+
+```{r}
+# dropping fnlwgt, education, capital.gain, capital.loss
+df <- adult[,-c(3,4,11,12)]
+```
+
+
+```{r}
+# revaluing income 
+library(plyr)
+plyr::revalue(df$income, c("<=50K" = "0", ">50K" = "1")) -> df$income
+```
+
+# Splitting df into training & testing
+
+```{r}
+# 0.7 training set, 0.3 test set
+set.seed(1)
+train_id <- sample(1:nrow(df), nrow(df)*0.7 , replace=F)
+training <- df[train_id,]
+testing <- df[-train_id,]
+```
+
+
+# Logistic Regression
+
+```{r}
+# fit model and predict 
+logit_model <- glm(income ~., data = training, family = binomial)
+logit_model_pred <- predict(logit_model, newdata=testing, type="response")
+set.seed(1)
+logit_model_pred <- ifelse(logit_model_pred > 0.5, 1, 0)
+```
+
+```{r}
+# confusion matrix
+table(logit_model_pred , testing$income)
+```
+
+```{r}
+# log error
+mean(logit_model_pred != testing$income)
+```
+
+16.8% miss classification error in logistic regression model. 
+
+# Linear Discriminant Analysis
+
+```{r}
+str(training)
+```
+
+Since LDA assumes that the observations within each class come from a normal distribution and thus
+expects predictors to be continuous variables, we only select “age”, “education-num”, and “hours-per-week” in this model.
+
+```{r}
+# fit model
+library(MASS)
+lda_income_fit <- lda(income ~ age + educational.num + hours.per.week, family = binomial(logit), data = training)
+lda_income_fit
+```
+```{r}
+# predict
+lda_pred_income <-  predict(lda_income_fit, testing)$class
+
+# confusion matrix
+table(lda_pred_income, testing$income)
+```
+```{r}
+# error rate of lda model
+mean(lda_pred_income != testing$income) 
+```
+22% error rate in classification.
+
+# K-Nearest Neighbors (KNN)
+
+KNN models can also handle categorical variables, but this requires us to convert categorical variables to m-1
+(m=levels of the categorical variables) dummy variables with value equals to 1 or 0. One hot encoding can be used to overcome this. 
+
+```{r}
+# Create new dataframe with dummy variables using one hot encoding
+library(mltools)
+library(data.table)
+df_knn <- one_hot(as.data.table(df))
+```
+
+```{r}
+# head
+head(df_knn)
+```
+
+```{r}
+# 0.7 training set, 0.3 test set
+set.seed(1)
+trainid <- sample(1:nrow(df_knn), nrow(df_knn)*0.7 , replace=F)
+knn.train <- df_knn[trainid,]
+knn.test <- df_knn[-trainid,]
+```
+
+```{r}
+# convert to data frames
+knn.train <- as.data.frame(knn.train)
+knn.test <- as.data.frame(knn.test)
+label = as.data.frame(knn.train$income_1)
+```
+
+```{r}
+# Train a knn classifier and change k accordingly. k =1
+library(class)
+knn_pred <- knn(knn.train, knn.test, knn.train$income_1, k=1)
+table(knn_pred, knn.test$income_1)
+mean(knn_pred != knn.test$income_1)
+```
+Error of only 4.6%. 
+
+```{r}
+# k = 5
+knn_pred <- knn(knn.train, knn.test, knn.train$income_1, k=5)
+table(knn_pred, knn.test$income_1)
+```
+```{r}
+mean(knn_pred != knn.test$income_1)
+```
+Error is around 4.6%.
+
+```{r}
+# k = 10
+knn_pred <- knn(knn.train, knn.test, knn.train$income_1, k=10)
+# confusion matrix
+table(knn_pred, knn.test$income_1)
+```
+```{r}
+# error for k = 10
+mean(knn_pred != knn.test$income_1)
+```
+Error increased from 4.6% to 5.4% when k increased to 10. 
+
+```{r}
+# k = 30
+knn_pred <- knn(knn.train, knn.test, knn.train$income_1, k=30)
+# confusion matrix
+table(knn_pred, knn.test$income_1)
+```
+```{r}
+# error for k = 30
+mean(knn_pred != knn.test$income_1)
+```
+Error is 7.1% for k = 30. 
+
+```{r}
+# k = 50
+knn_pred <- knn(knn.train, knn.test, knn.train$income_1, k=50)
+# confusion matrix
+table(knn_pred, knn.test$income_1)
+```
+```{r}
+# error for k = 50
+mean(knn_pred != knn.test$income_1)
+```
+Error is 8.3%.
+
+```{r}
+# k = 100
+knn_pred <- knn(knn.train, knn.test, knn.train$income_1, k=100)
+# confusion matrix
+table(knn_pred, knn.test$income_1)
+```
+
+```{r}
+# error for k = 100
+mean(knn_pred != knn.test$income_1)
+```
+Error is 10.3%. 
+
+Ideal k value is either 1 or 5.
+
+# Summary of results
+
+Linear Discriminant Analysis (LDA)
+
+- LDA was worst performing method to classify income with the highest error or misclassification rate of 22%.
+- LDA classification relies on Bayes theorem and attempstto solve P(X = x | Y = y) i.e for a given value of x what is the probability of Y?
+- LDA makes strong assumptions: Predictors must be normal, X distributions for different classes must be far apart, no multicollinearity, and no outliers. 
+- In practice, it is very difficult to implement these assumptions and this might explain high error values for lda. 
+
+
+Logistic regression 
+
+- This model performed better than LDA having an error rate of 16.8%
+- It is a good alternative to LDA to predict binary variables as it makes fewer 'strong' assumptions and is less sensitive to not normal data, outliers, and multicollinearity.
+- It uses the log function to estimate probability of outcome occuring. 
+
+K-Nearest Neighbors 
+
+- Best performing model having an error rate of 4.6% for (k = 1, k = 5).
+- Ideal for multiclass problems. 
+- K-NN is a Non-parametric algorithm i.e it doesn’t make any assumption about underlying data or its distribution.
+- However, KNN is sensitive to outliers and is computationally slow
+
+
+
